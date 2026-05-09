@@ -1,0 +1,84 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+  
+    // Helper function to check if user is Admin
+    function isAdmin() {
+      return get(/databases/$(database)/documents/user_roles/$(request.auth.uid)).data.role == 'admin';
+    }
+
+    // Helper function to check if user is Client
+    function isClient() {
+      return get(/databases/$(database)/documents/user_roles/$(request.auth.uid)).data.role == 'client';
+    }
+
+    // 1. Roles Collection
+    match /user_roles/{userId} {
+      // User can read their own role, Admins can read all roles
+      allow read: if request.auth != null && (request.auth.uid == userId || isAdmin());
+      // Only Admin can write roles
+      allow write: if request.auth != null && isAdmin();
+    }
+
+    // 2. Users Collection (general user data)
+    match /users/{userId} {
+      allow read: if request.auth != null; // Let anyone auth'd see users (for Admin/Client lists)
+      allow write: if request.auth != null && request.auth.uid == userId;
+    }
+
+    // 3. Theaters & Screens
+    match /theaters/{theaterId} {
+      // Anyone can read theaters
+      allow read: if true;
+      // Clients and Admins can create theaters
+      allow create: if request.auth != null && (isClient() || isAdmin());
+      // Owners or Admins can update/delete
+      allow update, delete: if request.auth != null && (isAdmin() || (isClient() && resource.data.ownerId == request.auth.uid));
+      
+      // Screens subcollection
+      match /screens/{screenId} {
+        allow read: if true;
+        // The rules inherit context, but it's safer to re-check client status. We assume the client owns the parent theater.
+        allow write: if request.auth != null && (isClient() || isAdmin());
+      }
+    }
+
+    // 4. Movies
+    match /movies/{movieId} {
+      allow read: if true;
+      // For now, let admins and clients create movies.
+      allow write: if request.auth != null && (isAdmin() || isClient());
+
+      // Showtimes (if structured under movies)
+      match /showtimes/{showtimeId} {
+        allow read: if true;
+        allow write: if request.auth != null && (isAdmin() || isClient());
+        
+        // Seats
+        match /seats/{seatId} {
+          allow read: if true;
+          // Allow authenticated users to book seats
+          allow write: if request.auth != null;
+        }
+      }
+    }
+
+    // 5. Showtimes (if structured at root level)
+    match /showtimes/{showtimeId} {
+      allow read: if true;
+      allow write: if request.auth != null && (isClient() || isAdmin());
+    }
+
+    // 6. Bookings
+    match /bookings/{bookingId} {
+      // Users can read their own bookings.
+      allow read: if request.auth != null && resource.data.userId == request.auth.uid;
+      // Anyone auth'd can create a booking
+      allow create: if request.auth != null && request.resource.data.userId == request.auth.uid;
+      // Users can delete (cancel) their own bookings
+      allow delete: if request.auth != null && resource.data.userId == request.auth.uid;
+    }
+
+  }
+}

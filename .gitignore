@@ -1,0 +1,6 @@
+node_modules/
+scripts/serviceAccountKey.json
+.DS_Store
+.env
+*.log
+groq-config.js

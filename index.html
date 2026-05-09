@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>BookMySeat — Cinema Booking</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap"
+    rel="stylesheet" />
+  <link rel="stylesheet" href="style.css?v=4" />
+  <!-- EmailJS SDK -->
+  <script type="text/javascript" src="https://cdn.jsdelivr.net/npm/@emailjs/browser@4/dist/email.min.js"></script>
+  <!-- Cropper.js for Client Portal -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.css" />
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.1/cropper.min.js"></script>
+  <!-- Flatpickr for Date/Time Multi-Select -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+  <link rel="stylesheet" type="text/css" href="https://npmcdn.com/flatpickr/dist/themes/dark.css">
+  <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+</head>
+
+<body>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  AUTH GATE — visible when unauthenticated  -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="auth-gate" class="auth-gate">
+    <div class="auth-noise"></div>
+    <div class="auth-orb auth-orb--1"></div>
+    <div class="auth-orb auth-orb--2"></div>
+
+    <div class="auth-card">
+      <div class="auth-card__logo"
+        style="width: 160px; height: 64px; margin: 0 auto 24px; border-radius: 12px; overflow: hidden; background: white; display: flex; justify-content: center; align-items: center;">
+        <img src="logo.jpg" alt="BookMySeat Logo"
+          style="width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.15); pointer-events: none;" />
+      </div>
+      <p class="auth-card__tagline">Cinema, <em>reimagined.</em></p>
+      <div class="auth-card__divider"></div>
+      <p class="auth-card__body">
+        Book seats at the best cinemas. Instantly. Beautifully.
+      </p>
+      <button id="google-signin-btn" class="btn-google">
+        <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg"
+          aria-hidden="true">
+          <path
+            d="M17.64 9.205c0-.639-.057-1.252-.164-1.841H9v3.481h4.844a4.14 4.14 0 0 1-1.796 2.716v2.259h2.908c1.702-1.567 2.684-3.875 2.684-6.615Z"
+            fill="#4285F4" />
+          <path
+            d="M9 18c2.43 0 4.467-.806 5.956-2.18l-2.908-2.259c-.806.54-1.837.86-3.048.86-2.344 0-4.328-1.584-5.036-3.711H.957v2.332A8.997 8.997 0 0 0 9 18Z"
+            fill="#34A853" />
+          <path
+            d="M3.964 10.71A5.41 5.41 0 0 1 3.682 9c0-.593.102-1.17.282-1.71V4.958H.957A8.996 8.996 0 0 0 0 9c0 1.452.348 2.827.957 4.042l3.007-2.332Z"
+            fill="#FBBC05" />
+          <path
+            d="M9 3.58c1.321 0 2.508.454 3.44 1.345l2.582-2.58C13.463.891 11.426 0 9 0A8.997 8.997 0 0 0 .957 4.958L3.964 7.29C4.672 5.163 6.656 3.58 9 3.58Z"
+            fill="#EA4335" />
+        </svg>
+        Continue with Google
+      </button>
+      <p class="auth-card__footnote">By continuing, you agree to our Terms &amp; Privacy Policy.</p>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!--  MAIN APP — revealed after authentication  -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="app" class="app hidden">
+
+    <!-- TOP NAV -->
+    <nav class="nav glass-panel">
+      <div class="nav__brand"
+        style="width: 90px; height: 36px; border-radius: 6px; overflow: hidden; background: white; display: flex; justify-content: center; align-items: center;">
+        <img src="logo.jpg" alt="BookMySeat Logo"
+          style="width: 100%; height: 100%; object-fit: cover; object-position: center; transform: scale(1.15); pointer-events: none;" />
+      </div>
+      <div class="nav__center" id="nav-breadcrumb">
+        <!-- Breadcrumb injected by ui.js -->
+      </div>
+      <div class="nav__actions">
+        <button id="admin-portal-btn" class="btn-ghost hidden" style="padding: 6px 12px; margin-right: 8px;">Admin</button>
+        <button id="client-portal-btn" class="btn-ghost hidden" style="padding: 6px 12px; margin-right: 8px;">Client Portal</button>
+        <button id="team-btn" class="btn-ghost" style="padding: 6px 12px; margin-right: 8px;">Team</button>
+        <button id="my-bookings-btn" class="btn-ghost" style="padding: 6px 12px; margin-right: 8px;">My Bookings</button>
+
+        <div class="nav__user" id="nav-user">
+          <!-- User info injected by ui.js -->
+        </div>
+        <button id="logout-btn" class="btn-icon" title="Sign out">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9" />
+          </svg>
+        </button>
+      </div>
+    </nav>
+
+    <!-- VIEW CONTAINER — router swaps views here -->
+    <main class="view-container" id="view-container">
+      <!-- Views injected by ui.js -->
+    </main>
+
+    <!-- BOOKING SUMMARY FOOTER — visible during seat selection -->
+    <div class="booking-bar glass-panel hidden" id="booking-bar">
+      <div class="booking-bar__info">
+        <div class="booking-bar__seats">
+          <span class="label">SEATS</span>
+          <span class="value mono" id="bar-seats">—</span>
+        </div>
+        <div class="booking-bar__count">
+          <span class="label">COUNT</span>
+          <span class="value mono" id="bar-count">0</span>
+        </div>
+        <div class="booking-bar__price">
+          <span class="label">TOTAL</span>
+          <span class="value mono accent" id="bar-price">₹0</span>
+        </div>
+        <div class="booking-bar__timer hidden" id="bar-timer">
+          <span class="label">TIME LEFT</span>
+          <span class="value mono accent" id="bar-timer-value">02:00</span>
+        </div>
+      </div>
+      <button id="confirm-booking-btn" class="btn-primary" disabled>
+        Confirm Booking
+      </button>
+    </div>
+
+  </div><!-- /#app -->
+
+  <!-- Local API config (excluded from git, holds API keys) -->
+  <script src="groq-config.js" onerror="console.info('groq-config.js not found, AI chat will use local fallback.')"></script>
+  <!-- ES Module entry point -->
+  <script type="module" src="app.js"></script>
+</body>
+
+</html>
