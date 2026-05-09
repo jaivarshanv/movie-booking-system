@@ -106,7 +106,65 @@ export async function grantClientAccess(targetUid) {
   }
 }
 
+export async function grantAdminAccess(targetUid) {
+  try {
+    const roleRef = doc(firestore, 'user_roles', targetUid);
+    await setDoc(roleRef, {
+      role: 'admin',
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('[db] Error granting admin access:', error);
+    throw error;
+  }
+}
+
 // ─── Client Portal Helpers ─────────────────────────
+
+export async function createMovie(movieData) {
+  try {
+    const moviesRef = collection(firestore, 'movies');
+    const newMovieRef = doc(moviesRef);
+    await setDoc(newMovieRef, {
+      ...movieData,
+      createdAt: serverTimestamp()
+    });
+    return newMovieRef.id;
+  } catch (error) {
+    console.error('[db] Error creating movie:', error);
+    throw error;
+  }
+}
+
+export async function updateMovie(movieId, movieData) {
+  try {
+    const movieRef = doc(firestore, 'movies', movieId);
+    await setDoc(movieRef, {
+      ...movieData,
+      updatedAt: serverTimestamp()
+    }, { merge: true });
+    return true;
+  } catch (error) {
+    console.error('[db] Error updating movie:', error);
+    throw error;
+  }
+}
+
+export async function createTheater(theaterData) {
+  try {
+    const theatersRef = collection(firestore, 'theaters');
+    const newTheaterRef = doc(theatersRef);
+    await setDoc(newTheaterRef, {
+      ...theaterData,
+      createdAt: serverTimestamp()
+    });
+    return newTheaterRef.id;
+  } catch (error) {
+    console.error('[db] Error creating theater:', error);
+    throw error;
+  }
+}
 
 export async function createScreen(theaterId, screenData) {
   try {
@@ -116,7 +174,7 @@ export async function createScreen(theaterId, screenData) {
       ...screenData,
       createdAt: serverTimestamp()
     });
-    return newScreenRef.id;
+    return { id: newScreenRef.id, ...screenData };
   } catch (error) {
     console.error('[db] Error creating screen:', error);
     throw error;
@@ -149,11 +207,108 @@ export async function getMovies() {
   return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
 }
 
-export async function getTheaters(movieId) {
-  // Currently returning all theaters for simplicity, in a real app
-  // we would query showtimes for this specific movieId
-  const snapshot = await getDocs(collection(firestore, 'theaters'));
-  return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+export async function getScreens(theaterId) {
+  try {
+    const screensRef = collection(firestore, `theaters/${theaterId}/screens`);
+    const snapshot = await getDocs(screensRef);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('[db] Error fetching screens:', error);
+    return [];
+  }
+}
+
+export async function getTheaters(movieId = null) {
+  try {
+    if (!movieId) {
+      // If no movieId, just return all theaters (used for admin/client dropdowns)
+      const snapshot = await getDocs(collection(firestore, 'theaters'));
+      return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+    }
+
+    // 1. Fetch showtimes for this movie
+    const showtimesRef = collection(firestore, 'showtimes');
+    const q = query(showtimesRef, where("movieId", "==", movieId));
+    const stSnap = await getDocs(q);
+    const showtimes = stSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+
+    // 2. Extract unique theater IDs
+    const theaterIds = [...new Set(showtimes.map(st => st.theaterId))];
+    
+    if (theaterIds.length === 0) return [];
+
+    // 3. Fetch theater documents and nest showtimes
+    const theatersData = [];
+    await Promise.all(theaterIds.map(async (tId) => {
+      const tSnap = await getDoc(doc(firestore, 'theaters', tId));
+      if (tSnap.exists()) {
+        const theater = { id: tSnap.id, ...tSnap.data() };
+        
+        // Attach showtimes belonging to this theater
+        theater.showtimes = showtimes.filter(st => st.theaterId === tId)
+          .map(st => {
+             // Convert 24h time to 12h AM/PM label
+             let [hour, minute] = st.time.split(':');
+             let ampm = hour >= 12 ? 'PM' : 'AM';
+             hour = hour % 12;
+             hour = hour ? hour : 12; // the hour '0' should be '12'
+             
+             return {
+              id: st.id,
+              date: st.date || "2026-05-10", // fallback for mock
+              time: st.time,
+              label: `${hour}:${minute} ${ampm}`,
+              price: st.price,
+              screenId: st.screenId,
+              screenName: st.screenName,
+              rows: st.rows,
+              cols: st.cols,
+              availability: "high"
+             };
+          })
+          .sort((a,b) => a.time.localeCompare(b.time));
+          
+        theatersData.push(theater);
+      }
+    }));
+    return theatersData;
+  } catch (error) {
+    console.error('[db] Error fetching theaters for movie:', error);
+    return [];
+  }
+}
+
+export async function getShowtimesForScreen(screenId, date) {
+  try {
+    const showtimesRef = collection(firestore, 'showtimes');
+    const q = query(showtimesRef, where("screenId", "==", screenId), where("date", "==", date));
+    const snapshot = await getDocs(q);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('[db] Error fetching showtimes for screen:', error);
+    return [];
+  }
+}
+
+export async function getAllShowtimes() {
+  try {
+    const showtimesRef = collection(firestore, 'showtimes');
+    const snapshot = await getDocs(showtimesRef);
+    return snapshot.docs.map(d => ({ id: d.id, ...d.data() }));
+  } catch (error) {
+    console.error('[db] Error fetching all showtimes:', error);
+    return [];
+  }
+}
+
+export async function deleteShowtime(showtimeId) {
+  try {
+    await deleteDoc(doc(firestore, 'showtimes', showtimeId));
+    return true;
+  } catch (error) {
+    console.error('[db] Error deleting showtime:', error);
+    throw error;
+  }
 }
 
 // ─── Real-Time Seat Synchronization ─────────────────────────

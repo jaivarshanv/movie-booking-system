@@ -1,7 +1,7 @@
-import { getAllUsers, grantClientAccess } from './db.js';
+import { getAllUsers, grantClientAccess, grantAdminAccess } from './db.js';
 import { renderLoading } from './ui.js';
 
-export async function renderAdminPortal(container, onBack) {
+export async function renderAdminPortal(container, onBack, currentUser) {
   renderLoading('Loading Admin Portal...');
 
   try {
@@ -50,12 +50,18 @@ export async function renderAdminPortal(container, onBack) {
                       ${u.role || 'user'}
                     </span>
                   </td>
-                  <td style="padding: 12px;">
-                    ${u.role !== 'admin' && u.role !== 'client' ? `
+                  <td style="padding: 12px; display: flex; gap: 8px;">
+                    ${u.role !== 'admin' && u.uid !== currentUser?.uid ? `
+                      <button class="btn-outline grant-admin-btn" data-uid="${u.uid}" style="padding: 4px 12px; font-size: 12px; border-color: var(--clr-accent); color: var(--clr-accent);">
+                        Grant Admin
+                      </button>
+                    ` : ''}
+                    ${u.role !== 'admin' && u.role !== 'client' && u.uid !== currentUser?.uid ? `
                       <button class="btn-outline grant-client-btn" data-uid="${u.uid}" style="padding: 4px 12px; font-size: 12px; border-color: #FF3131; color: #FF3131;">
                         Grant Client
                       </button>
-                    ` : '<span style="color:var(--clr-text-dim); font-size: 12px;">N/A</span>'}
+                    ` : ''}
+                    ${u.uid === currentUser?.uid ? '<span style="color:var(--clr-text-dim); font-size: 12px;">You</span>' : (u.role === 'admin' ? '<span style="color:var(--clr-text-dim); font-size: 12px;">Admin — No actions</span>' : '')}
                   </td>
                 </tr>
               `).join('')}
@@ -68,25 +74,46 @@ export async function renderAdminPortal(container, onBack) {
     // Event Listeners
     document.getElementById('admin-back-btn').addEventListener('click', onBack);
 
-    const grantBtns = container.querySelectorAll('.grant-client-btn');
-    grantBtns.forEach(btn => {
+    const grantClientBtns = container.querySelectorAll('.grant-client-btn');
+    grantClientBtns.forEach(btn => {
       btn.addEventListener('click', async (e) => {
         const uid = e.target.dataset.uid;
         e.target.disabled = true;
         e.target.textContent = 'Updating...';
-        // Show Nothing-Red loader globally or locally
         const loader = document.createElement('div');
         loader.className = 'nothing-loader';
         document.body.appendChild(loader);
 
         try {
           await grantClientAccess(uid);
-          // Refresh portal
-          renderAdminPortal(container, onBack);
+          renderAdminPortal(container, onBack, currentUser);
         } catch (error) {
           alert('Failed to grant client access');
           e.target.disabled = false;
           e.target.textContent = 'Grant Client';
+        } finally {
+          loader.remove();
+        }
+      });
+    });
+
+    const grantAdminBtns = container.querySelectorAll('.grant-admin-btn');
+    grantAdminBtns.forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        const uid = e.target.dataset.uid;
+        e.target.disabled = true;
+        e.target.textContent = 'Updating...';
+        const loader = document.createElement('div');
+        loader.className = 'nothing-loader';
+        document.body.appendChild(loader);
+
+        try {
+          await grantAdminAccess(uid);
+          renderAdminPortal(container, onBack, currentUser);
+        } catch (error) {
+          alert('Failed to grant admin access');
+          e.target.disabled = false;
+          e.target.textContent = 'Grant Admin';
         } finally {
           loader.remove();
         }

@@ -1,18 +1,17 @@
 import { PRICING, toggleSeatStatus, clearPendingSeats } from './db.js';
 
 // ═══════════════════════════════════════════════════════════════
-//  CONSTANTS — Grid Configuration
+//  CONSTANTS & UTILS
 // ═══════════════════════════════════════════════════════════════
 
-export const ROWS = 8;
-export const COLS = 10;
-export const ROW_LABELS = ['A', 'B', 'C', 'D', 'E', 'F', 'G', 'H'];
-export const ROW_CATEGORIES = {
-  A: 'economy', B: 'economy', C: 'economy',
-  D: 'standard', E: 'standard', 
-  F: 'premium', G: 'premium', H: 'premium'
-};
-export const AISLE_AFTER_COL = 4;
+export function getCategoryForRow(rowLabel, totalRows) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const r = alphabet.indexOf(rowLabel);
+  if (r === -1) return 'standard';
+  if (r < totalRows * 0.3) return 'economy';
+  if (r >= Math.floor(totalRows * 0.8)) return 'premium';
+  return 'standard';
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  MODULE STATE
@@ -21,7 +20,9 @@ export const AISLE_AFTER_COL = 4;
 let context = {
   movieId: null,
   showtimeId: null,
-  userId: null
+  userId: null,
+  rows: 8,
+  cols: 10
 };
 
 let seatStates = {}; // seatId -> 'available' | 'selected' | 'pending' | 'booked'
@@ -102,7 +103,7 @@ export function getSelectionSummary() {
 
   for (const seatId of selectedSeats) {
     const row = seatId[0];
-    const category = ROW_CATEGORIES[row];
+    const category = getCategoryForRow(row, context.rows);
     const price = PRICING[category] ?? 0;
     totalPrice += price;
     breakdown[category]++;
@@ -123,22 +124,31 @@ export async function clearUserSelection() {
 }
 
 export function generateSeatLayout() {
-  return ROW_LABELS.map(rowLabel => {
-    const category = ROW_CATEGORIES[rowLabel];
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+  const numRows = Math.min(context.rows || 8, 26);
+  const numCols = context.cols || 10;
+  const aisleAfter = Math.floor(numCols / 2);
+  
+  const layout = [];
+  for (let r = 0; r < numRows; r++) {
+    const rowLabel = alphabet[r];
+    const category = getCategoryForRow(rowLabel, numRows);
     const price = PRICING[category];
+    
     const seats = [];
-    for (let col = 1; col <= COLS; col++) {
+    for (let col = 1; col <= numCols; col++) {
       seats.push({
         id: `${rowLabel}${col}`,
         row: rowLabel,
         col,
         category,
         price,
-        isAisle: col === AISLE_AFTER_COL
+        isAisle: col === aisleAfter
       });
     }
-    return { label: rowLabel, category, seats };
-  });
+    layout.push({ label: rowLabel, category, seats });
+  }
+  return layout;
 }
 
 function _compareSeatIds(a, b) {

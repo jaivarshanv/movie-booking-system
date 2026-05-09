@@ -22,14 +22,14 @@ const db = admin.firestore();
 async function makeAdmin() {
   try {
     const roleRef = db.collection('user_roles').doc(targetUid);
-    
+
     // Set the role to admin, merging with any existing data
     await roleRef.set({
       role: 'admin',
       updatedAt: admin.firestore.FieldValue.serverTimestamp()
     }, { merge: true });
 
-    console.log(`✅ Successfully set 'admin' role for UID: ${targetUid}`);
+    console.log(`Successfully set 'admin' role for UID: ${targetUid}`);
     process.exit(0);
   } catch (error) {
     console.error("Error setting admin role:", error);

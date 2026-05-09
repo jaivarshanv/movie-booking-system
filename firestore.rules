@@ -31,16 +31,16 @@ service cloud.firestore {
     match /theaters/{theaterId} {
       // Anyone can read theaters
       allow read: if true;
-      // Clients can create theaters
-      allow create: if request.auth != null && isClient();
-      // Only the client who owns the theater can update/delete it (assuming ownerId field)
-      allow update, delete: if request.auth != null && isClient() && resource.data.ownerId == request.auth.uid;
+      // Clients and Admins can create theaters
+      allow create: if request.auth != null && (isClient() || isAdmin());
+      // Owners or Admins can update/delete
+      allow update, delete: if request.auth != null && (isAdmin() || (isClient() && resource.data.ownerId == request.auth.uid));
       
       // Screens subcollection
       match /screens/{screenId} {
         allow read: if true;
         // The rules inherit context, but it's safer to re-check client status. We assume the client owns the parent theater.
-        allow write: if request.auth != null && isClient();
+        allow write: if request.auth != null && (isClient() || isAdmin());
       }
     }
 
@@ -67,7 +67,7 @@ service cloud.firestore {
     // 5. Showtimes (if structured at root level)
     match /showtimes/{showtimeId} {
       allow read: if true;
-      allow write: if request.auth != null && isClient();
+      allow write: if request.auth != null && (isClient() || isAdmin());
     }
 
     // 6. Bookings

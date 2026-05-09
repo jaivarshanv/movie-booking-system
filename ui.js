@@ -11,7 +11,7 @@
  * ─────────────────────────────────────────────────────────────
  */
 
-import { generateSeatLayout, handleSeatToggle, getSeatState, ROW_CATEGORIES } from './booking.js';
+import { generateSeatLayout, handleSeatToggle, getSeatState } from './booking.js';
 import { PRICING } from './db.js';
 
 
@@ -116,6 +116,26 @@ export function updateBreadcrumb(crumbs) {
 // ═══════════════════════════════════════════════════════════════
 
 /**
+ * getCropStyle
+ * Generates inline CSS for non-destructive dynamic cropping
+ */
+function getCropStyle(movie) {
+  const pOrig = movie.posterOriginal;
+  const crop = movie.posterCrop;
+
+  if (!pOrig || !crop || !crop.width || !crop.naturalWidth) {
+    return 'width: 100%; height: 100%; object-fit: cover;';
+  }
+
+  const widthPct = (crop.naturalWidth / crop.width) * 100;
+  const heightPct = (crop.naturalHeight / crop.height) * 100;
+  const leftPct = -(crop.x / crop.width) * 100;
+  const topPct = -(crop.y / crop.height) * 100;
+
+  return `position: absolute; max-width: none; width: ${widthPct}%; height: ${heightPct}%; left: ${leftPct}%; top: ${topPct}%; object-fit: fill;`;
+}
+
+/**
  * renderMovieDashboard
  * Renders the bento grid of currently showing movies.
  *
@@ -135,44 +155,65 @@ export function renderMovieDashboard(movies, onMovieClick) {
       tabindex="0"
       aria-label="Book tickets for ${movie.title}"
     >
-      <div class="movie-card__poster-wrap">
-        <img
-          class="movie-card__poster"
-          src="${movie.poster}"
-          alt="${movie.title} poster"
-          loading="lazy"
-          onerror="this.src='https://images.unsplash.com/photo-1574267432553-4b4628081c31?w=800&q=60'"
-        />
-      </div>
-      <div class="movie-card__body">
-        <div class="movie-card__meta">
-          <span class="movie-card__genre">${movie.genre}</span>
-          <span class="movie-card__dot">·</span>
-          <span class="movie-card__rating">${movie.rating} ★</span>
+      <div class="movie-card__image-container">
+        <div class="movie-card__poster-wrap">
+          <img
+            class="movie-card__poster"
+            src="${movie.posterOriginal || movie.poster}"
+            alt="${movie.title} poster"
+            loading="lazy"
+            onerror="this.onerror=null; this.style.position=''; this.style.width='100%'; this.style.height='100%'; this.style.left='0'; this.style.top='0'; this.style.objectFit='cover'; this.src='https://images.unsplash.com/photo-1574267432553-4b4628081c31?w=800&q=60';"
+            style="${getCropStyle(movie)}"
+          />
         </div>
-        <h2 class="movie-card__title ${i % 3 === 2 ? '' : 'movie-card__title-sm'}">${movie.title}</h2>
-        <p class="movie-card__duration mono">${movie.duration} · ${movie.language} · ${movie.format}</p>
-        <div class="movie-card__cta">
-          Book Now <span class="movie-card__cta-arrow">→</span>
+        <div class="movie-card__rating-strip">
+          <span style="color: #FF3131; font-size: 14px;">★</span> ${movie.rating}/10
         </div>
       </div>
+      <h2 class="movie-card__title">${movie.title}</h2>
+      <p class="movie-card__genre">${movie.genre}</p>
     </article>
   `).join('');
 
   EL.viewContainer.innerHTML = `
     <section class="view">
-      <header class="view__header">
-        <p class="view__eyebrow">Now Showing</p>
-        <h1 class="view__title">What will you<br/>watch tonight?</h1>
-        <p class="view__subtitle">Select a film to explore showtimes.</p>
-      </header>
-      <div class="bento-grid">
+      <div class="dashboard-hero">
+        <header class="view__header" style="margin-bottom: 0;">
+          <p class="view__eyebrow">Now Showing</p>
+          <h1 class="view__title">What will you<br/>watch tonight?</h1>
+          <p class="view__subtitle">Select a film to explore showtimes.</p>
+        </header>
+        <div class="ai-chat-widget" id="ai-chat-widget">
+          <div class="ai-chat__header">
+            <span class="ai-chat__badge">AI</span>
+            <span class="ai-chat__label">Find your perfect film</span>
+          </div>
+          <div class="ai-chat__messages" id="ai-chat-messages">
+            <div class="ai-chat__msg ai-chat__msg--bot">
+              Hey! Tell me what kind of movie you're in the mood for — genre, feeling, or anything on your mind.
+            </div>
+          </div>
+          <form class="ai-chat__form" id="ai-chat-form">
+            <input
+              id="ai-chat-input"
+              class="ai-chat__input"
+              type="text"
+              placeholder="e.g. something thrilling, or a light comedy…"
+              autocomplete="off"
+            />
+            <button type="submit" class="ai-chat__send" aria-label="Send">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
+            </button>
+          </form>
+        </div>
+      </div>
+      <div class="bento-grid" style="margin-top: var(--space-2xl);">
         ${cards}
       </div>
     </section>
   `;
 
-  // Attach click handlers
+  // Attach movie card click handlers
   EL.viewContainer.querySelectorAll('.movie-card').forEach(card => {
     const id = card.dataset.movieId;
     const movie = movies.find(m => m.id === id);
@@ -180,7 +221,189 @@ export function renderMovieDashboard(movies, onMovieClick) {
     card.addEventListener('click', handler);
     card.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') handler(); });
   });
+
+
+  // ── Groq Chat (Llama 3.3) with local fallback ──────────────────
+  // Key is loaded from groq-config.js (excluded from git via .gitignore)
+  const GROQ_API_KEY = window.__GROQ_KEY__ || '';
+  const GROQ_URL = 'https://api.groq.com/openai/v1/chat/completions';
+
+  const movieContext = movies.map(m =>
+    `- "${m.title}" | Genre: ${m.genre} | Rating: ${m.rating}/10 | Duration: ${m.duration} | Synopsis: ${m.synopsis || 'N/A'}`
+  ).join('\n');
+
+  const systemPrompt = `You are a friendly movie concierge for BookMySeat cinema. Your only job is to chat briefly with the user, understand their mood/preferences, and recommend ONE movie from the list below that is currently showing.
+
+Available movies (ONLY recommend from this list):
+${movieContext}
+
+Rules:
+1. Keep every response to 2-3 sentences max.
+2. Ask at most one follow-up question before recommending.
+3. When recommending, mention the title in quotes and give a one-line reason.
+4. End your recommendation message with exactly this tag on its own: RECOMMEND:"<exact movie title>"
+5. Never discuss anything unrelated to movies.`;
+
+  const chatHistory = []; // OpenAI format: [{role, content}]
+  const messagesEl = document.getElementById('ai-chat-messages');
+  const form = document.getElementById('ai-chat-form');
+  const input = document.getElementById('ai-chat-input');
+
+  // ── Local fallback engine ──────────────────────────────────────
+  const MOOD_MAP = {
+    action:    ['action','fight','battle','war','hero','adrenaline','explosive','martial','combat'],
+    adventure: ['adventure','journey','quest','explore','epic','fantasy','travel'],
+    comedy:    ['comedy','funny','laugh','humor','light','fun','happy','hilarious','feel good'],
+    drama:     ['drama','emotional','deep','touching','serious','intense','story'],
+    romance:   ['romance','romantic','love','couple','date','sweet','heart','relationship'],
+    horror:    ['horror','scary','fear','ghost','dark','creepy','terror'],
+    thriller:  ['thriller','suspense','mystery','twist','crime','detective','tension','psychological'],
+    scifi:     ['sci-fi','scifi','space','future','robot','alien','science fiction','tech'],
+  };
+  const detectMoods = (text) => {
+    const lower = text.toLowerCase();
+    return Object.keys(MOOD_MAP).filter(mood => MOOD_MAP[mood].some(kw => lower.includes(kw)));
+  };
+  const scoreMoods = (detected) => movies.map(movie => {
+    const hay = `${movie.genre} ${movie.title} ${movie.synopsis || ''}`.toLowerCase();
+    let score = parseFloat(movie.rating) || 0;
+    detected.forEach(mood => MOOD_MAP[mood]?.forEach(kw => { if (hay.includes(kw)) score += 4; }));
+    return { movie, score };
+  }).sort((a, b) => b.score - a.score);
+
+  let localState = 'ask_mood';
+  let collectedMoods = [];
+
+  const localReply = (userText) => {
+    const moods = detectMoods(userText);
+    collectedMoods = [...new Set([...collectedMoods, ...moods])];
+    if (localState === 'ask_mood') {
+      if (collectedMoods.length > 0) {
+        localState = 'done';
+        const best = scoreMoods(collectedMoods)[0].movie;
+        return { text: `Based on your vibe, I think you'll love "${best.title}" — ${best.genre}, ${best.rating}/10.`, recommend: best };
+      } else {
+        localState = 'ask_follow';
+        return { text: `Got it! Are you in the mood for something exciting like action or thriller, or something lighter like comedy or romance?` };
+      }
+    } else if (localState === 'ask_follow') {
+      localState = 'done';
+      if (collectedMoods.length > 0) {
+        const best = scoreMoods(collectedMoods)[0].movie;
+        return { text: `Perfect! I'd go with "${best.title}" — ${best.genre}, ${best.rating}/10.`, recommend: best };
+      } else {
+        const best = [...movies].sort((a, b) => (parseFloat(b.rating)||0) - (parseFloat(a.rating)||0))[0];
+        return { text: `Let me pick our top-rated film for you — "${best.title}"! ${best.genre}, ${best.rating}/10.`, recommend: best };
+      }
+    }
+    return { text: `Tap the "Book" button to grab your seats!` };
+  };
+  // ─────────────────────────────────────────────────────────────────
+
+  const addMessage = (text, isBot) => {
+    const div = document.createElement('div');
+    div.className = `ai-chat__msg ${isBot ? 'ai-chat__msg--bot' : 'ai-chat__msg--user'}`;
+    div.textContent = text;
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  };
+
+  const addTypingIndicator = () => {
+    const div = document.createElement('div');
+    div.className = 'ai-chat__msg ai-chat__msg--bot ai-chat__msg--typing';
+    div.innerHTML = '<span></span><span></span><span></span>';
+    messagesEl.appendChild(div);
+    messagesEl.scrollTop = messagesEl.scrollHeight;
+    return div;
+  };
+
+  const showRecommendation = (movie) => {
+    setTimeout(() => {
+      const card = EL.viewContainer.querySelector(`[data-movie-id="${movie.id}"]`);
+      if (card) {
+        card.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        card.style.outline = '2px solid var(--clr-accent)';
+        card.style.outlineOffset = '4px';
+      }
+    }, 300);
+    setTimeout(() => {
+      const bookDiv = document.createElement('div');
+      bookDiv.className = 'ai-chat__msg ai-chat__msg--bot';
+      bookDiv.innerHTML = `<button class="ai-chat__book-btn">Book "${movie.title}" →</button>`;
+      messagesEl.appendChild(bookDiv);
+      messagesEl.scrollTop = messagesEl.scrollHeight;
+      bookDiv.querySelector('.ai-chat__book-btn').addEventListener('click', () => onMovieClick(movie));
+    }, 500);
+  };
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const userText = input.value.trim();
+    if (!userText) return;
+
+    input.value = '';
+    input.disabled = true;
+    addMessage(userText, false);
+    chatHistory.push({ role: 'user', content: userText });
+
+    const typingEl = addTypingIndicator();
+
+    try {
+      const res = await fetch(GROQ_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${GROQ_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: 'llama-3.3-70b-versatile',
+          messages: [
+            { role: 'system', content: systemPrompt },
+            ...chatHistory
+          ],
+          temperature: 0.7,
+          max_tokens: 256
+        })
+      });
+
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const data = await res.json();
+      const botText = data?.choices?.[0]?.message?.content?.trim();
+      if (!botText) throw new Error('Empty response');
+
+      typingEl.remove();
+      chatHistory.push({ role: 'assistant', content: botText });
+
+      const recMatch = botText.match(/RECOMMEND:"([^"]+)"/);
+      if (recMatch) {
+        const cleanText = botText.replace(/RECOMMEND:"[^"]+"\s*/g, '').trim();
+        addMessage(cleanText || `I recommend "${recMatch[1]}"!`, true);
+        const recommended = movies.find(m =>
+          m.title.toLowerCase() === recMatch[1].toLowerCase() ||
+          m.title.toLowerCase().includes(recMatch[1].toLowerCase())
+        );
+        if (recommended) showRecommendation(recommended);
+      } else {
+        addMessage(botText, true);
+      }
+
+    } catch (err) {
+      typingEl.remove();
+      console.warn('[Chat] Groq unavailable, using local engine:', err.message);
+      const result = localReply(userText);
+      addMessage(result.text, true);
+      if (result.recommend) showRecommendation(result.recommend);
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  });
 }
+
+
+
 
 
 // ═══════════════════════════════════════════════════════════════
@@ -200,71 +423,134 @@ export function renderShowtimeView(movie, theaters, onBack, onShowtime) {
   updateBreadcrumb(['Now Playing', movie.title]);
   hideBookingBar();
 
-  const theaterCards = theaters.map((theater, ti) => {
-    const showtimeBtns = theater.showtimes.map(st => `
-      <button
-        class="showtime-btn ${st.availability === 'low' ? 'almost-full' : ''}"
-        data-theater-idx="${ti}"
-        data-showtime-id="${st.id}"
-        aria-label="Select ${st.label} showtime"
-      >
-        ${st.label}
-        ${st.availability === 'low' ? '<br/><span style="font-size:9px;opacity:0.7">FAST FILLING</span>' : ''}
-      </button>
-    `).join('');
+  // 1. Extract and sort unique dates from all showtimes
+  const uniqueDates = new Set();
+  theaters.forEach(t => t.showtimes.forEach(st => {
+    if (st.date) uniqueDates.add(st.date);
+  }));
+  const datesList = Array.from(uniqueDates).sort();
 
-    return `
-      <div class="theater-card" style="animation-delay: ${ti * 100}ms">
-        <div class="theater-card__header">
-          <div>
-            <h3 class="theater-card__name">${theater.name}</h3>
-            <p class="theater-card__address">${theater.address}</p>
-          </div>
-          <span class="theater-card__format">${theater.format}</span>
-        </div>
-        <div class="showtime-row">
-          ${showtimeBtns}
-        </div>
-      </div>
+  // If no dates/showtimes exist for this movie
+  if (datesList.length === 0) {
+    EL.viewContainer.innerHTML = `
+      <section class="view">
+        <button class="back-btn" id="back-to-dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M19 12H5M12 5l-7 7 7 7"/>
+          </svg>
+          All Movies
+        </button>
+        <header class="view__header">
+          <h1 class="view__title">${movie.title}</h1>
+          <p class="view__subtitle">No showtimes scheduled yet.</p>
+        </header>
+      </section>
     `;
-  }).join('');
+    document.getElementById('back-to-dashboard').addEventListener('click', onBack);
+    return;
+  }
 
-  EL.viewContainer.innerHTML = `
-    <section class="view">
-      <button class="back-btn" id="back-to-dashboard">
-        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-          <path d="M19 12H5M12 5l-7 7 7 7"/>
-        </svg>
-        All Movies
-      </button>
-      <header class="view__header">
-        <p class="view__eyebrow">${movie.genre} · ${movie.format}</p>
-        <h1 class="view__title">${movie.title}</h1>
-        <p class="view__subtitle">${movie.duration} · ${movie.language} · ★ ${movie.rating}</p>
-      </header>
-      <div class="theater-list">
-        ${theaterCards}
-      </div>
-    </section>
-  `;
+  let selectedDate = datesList[0];
 
-  $('back-to-dashboard').addEventListener('click', onBack);
+  function renderContent() {
+    // Render Date Carousel
+    const datesHTML = datesList.map(dateStr => {
+      const d = new Date(dateStr);
+      const dayName = d.toLocaleDateString('en-US', { weekday: 'short' }).toUpperCase();
+      const dayNum = d.getDate();
+      const monthName = d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase();
+      const isSelected = dateStr === selectedDate;
 
-  // Wire showtime buttons
-  EL.viewContainer.querySelectorAll('.showtime-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      // Visual active state
-      EL.viewContainer.querySelectorAll('.showtime-btn').forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
+      return `
+        <button class="date-pill ${isSelected ? 'selected' : ''}" data-date="${dateStr}">
+          <span style="font-size: 10px; opacity: 0.8;">${dayName}</span>
+          <span style="font-size: 20px; font-weight: 600; margin: 2px 0;">${dayNum}</span>
+          <span style="font-size: 10px; opacity: 0.8;">${monthName}</span>
+        </button>
+      `;
+    }).join('');
 
-      const theaterIdx = parseInt(btn.dataset.theaterIdx);
-      const showtimeId = btn.dataset.showtimeId;
-      const theater = theaters[theaterIdx];
-      const showtime = theater.showtimes.find(s => s.id === showtimeId);
+    // Filter theaters and showtimes based on selected date
+    const theaterCardsHTML = theaters.map((theater, ti) => {
+      const filteredShowtimes = theater.showtimes.filter(st => st.date === selectedDate);
+      if (filteredShowtimes.length === 0) return ''; // Hide theater if no shows on this date
 
-      onShowtime(theater, showtime);
+      const showtimeBtns = filteredShowtimes.map(st => `
+        <button
+          class="showtime-btn ${st.availability === 'low' ? 'almost-full' : ''}"
+          data-theater-idx="${ti}"
+          data-showtime-id="${st.id}"
+          aria-label="Select ${st.label} showtime"
+        >
+          <span style="color: ${st.availability === 'low' ? '#FF3131' : '#30d158'}; font-size:12px; margin-right:4px;">●</span>
+          ${st.label}
+        </button>
+      `).join('');
+
+      return `
+        <div class="theater-card fade-in">
+          <div class="theater-card__header">
+            <div>
+              <h3 class="theater-card__name">${theater.name}</h3>
+              <p class="theater-card__address">${theater.address}</p>
+            </div>
+            <span class="theater-card__format">${theater.format}</span>
+          </div>
+          <div class="showtime-row">
+            ${showtimeBtns}
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    EL.viewContainer.innerHTML = `
+      <section class="view">
+        <button class="back-btn" id="back-to-dashboard">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M19 12H5M12 5l-7 7 7 7"/>
+          </svg>
+          All Movies
+        </button>
+        <header class="view__header">
+          <p class="view__eyebrow">${movie.genre} · ${movie.format}</p>
+          <h1 class="view__title">${movie.title}</h1>
+          <p class="view__subtitle">${movie.duration} · ${movie.language} · ★ ${movie.rating}</p>
+        </header>
+
+        <!-- Date Carousel -->
+        <div class="date-carousel">
+          ${datesHTML}
+        </div>
+
+        <div class="theater-list">
+          ${theaterCardsHTML || '<p style="color:var(--clr-text-dim); text-align:center; padding: 40px 0;">No shows available on this date.</p>'}
+        </div>
+      </section>
+    `;
+
+    // Attach Listeners
+    document.getElementById('back-to-dashboard').addEventListener('click', onBack);
+
+    EL.viewContainer.querySelectorAll('.date-pill').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        selectedDate = e.currentTarget.dataset.date;
+        renderContent();
+      });
     });
-  });
+
+    EL.viewContainer.querySelectorAll('.showtime-btn').forEach(btn => {
+      btn.addEventListener('click', (e) => {
+        const tIdx = e.currentTarget.dataset.theaterIdx;
+        const sId = e.currentTarget.dataset.showtimeId;
+        const theater = theaters[tIdx];
+        const showtime = theater.showtimes.find(s => s.id === sId);
+        onShowtime(theater, showtime);
+      });
+    });
+  }
+
+  // Initial Render
+  renderContent();
 }
 
 

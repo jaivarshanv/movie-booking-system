@@ -15,7 +15,7 @@
  */
 
 import { onAuthChange, signInWithGoogle, logout, getCurrentUser } from './auth.js';
-import { getMovies, getTheaters, saveBooking, sendConfirmationEmail, seedDatabase, listenToSeats, clearPendingSeats, cancelBooking, getUserBookings } from './db.js';
+import { getMovies, getTheaters, saveBooking, sendConfirmationEmail, seedDatabase, listenToSeats, clearPendingSeats, cancelBooking, getUserBookings, getAllShowtimes } from './db.js';
 import { initBooking, getSelectionSummary, clearUserSelection, updateRealtimeSeats, stopTimer } from './booking.js';
 import {
   showApp, showAuthGate,
@@ -158,7 +158,11 @@ async function navigateToDashboard() {
     if (AppState.movies.length === 0) {
       AppState.movies = await getMovies();
     }
-    renderMovieDashboard(AppState.movies, navigateToShowtimes);
+    const allShowtimes = await getAllShowtimes();
+    const activeMovieIds = new Set(allShowtimes.map(st => st.movieId));
+    const activeMovies = AppState.movies.filter(m => activeMovieIds.has(m.id));
+
+    renderMovieDashboard(activeMovies, navigateToShowtimes);
   } catch (err) {
     console.error('[app] Failed to load movies:', err);
     document.getElementById('view-container').innerHTML = `
@@ -222,7 +226,13 @@ async function navigateToSeats(theater, showtime) {
 
     // Initialize the booking module
     initBooking(
-      { movieId: AppState.selectedMovie.id, showtimeId: showtime.id, userId: user?.uid },
+      { 
+        movieId: AppState.selectedMovie.id, 
+        showtimeId: showtime.id, 
+        userId: user?.uid,
+        rows: showtime.rows || 8,
+        cols: showtime.cols || 10
+      },
       {},
       summary => { updateBookingBar(summary); }, // onChange
       timeStr => { updateTimerUI(timeStr); },    // onTick
@@ -342,7 +352,7 @@ function navigateToAdminPortal() {
   clearUserSelection();
   hideBookingBar();
   const container = document.getElementById('view-container');
-  renderAdminPortal(container, navigateToDashboard);
+  renderAdminPortal(container, navigateToDashboard, getCurrentUser());
 }
 
 /**
