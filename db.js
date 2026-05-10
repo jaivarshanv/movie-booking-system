@@ -504,3 +504,75 @@ export async function getUserBookings(userId) {
     return [];
   }
 }
+
+// ─── Auto-Schedule Showtimes ──────────────────────────────────────────────────
+// Given a movieId, randomly picks 2-3 theaters, 1-2 screens each,
+// and creates showtimes for the next 7 days at varied times.
+export async function autoScheduleShowtimes(movieId, ownerId) {
+  const TIME_POOLS = [
+    ['10:00', '13:30', '17:00', '20:30'],
+    ['09:30', '13:00', '16:30', '20:00'],
+    ['10:30', '14:00', '18:30', '22:00'],
+    ['11:00', '15:00', '19:00'],
+  ];
+  const PRICES = [220, 250, 280, 320, 350, 400];
+
+  // Get all theaters
+  const theaterSnap = await getDocs(collection(firestore, 'theaters'));
+  const theaters = theaterSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+  if (theaters.length === 0) throw new Error('No theaters found. Add theaters first.');
+
+  // Pick 2-3 random theaters (or all if fewer)
+  const shuffledTheaters = [...theaters].sort(() => Math.random() - 0.5);
+  const pickedTheaters = shuffledTheaters.slice(0, Math.min(3, theaters.length));
+
+  // Build date list for next 7 days
+  const dates = Array.from({ length: 7 }, (_, i) => {
+    const d = new Date();
+    d.setDate(d.getDate() + i);
+    return d.toISOString().split('T')[0];
+  });
+
+  const batch = writeBatch(firestore);
+  let count = 0;
+
+  for (const theater of pickedTheaters) {
+    // Get screens for this theater
+    const screenSnap = await getDocs(collection(firestore, `theaters/${theater.id}/screens`));
+    const screens = screenSnap.docs.map(d => ({ id: d.id, ...d.data() }));
+    if (screens.length === 0) continue;
+
+    // Pick 1-2 random screens
+    const pickedScreens = [...screens].sort(() => Math.random() - 0.5)
+      .slice(0, Math.min(2, screens.length));
+
+    const times = TIME_POOLS[Math.floor(Math.random() * TIME_POOLS.length)];
+    const price = PRICES[Math.floor(Math.random() * PRICES.length)];
+
+    for (const screen of pickedScreens) {
+      for (const date of dates) {
+        for (const time of times) {
+          const ref = doc(collection(firestore, 'showtimes'));
+          batch.set(ref, {
+            movieId,
+            theaterId: theater.id,
+            screenId: screen.id,
+            screenName: screen.name || 'Main Screen',
+            rows: screen.rows || 10,
+            cols: screen.cols || 12,
+            date,
+            time,
+            price,
+            ownerId,
+            createdAt: serverTimestamp(),
+          });
+          count++;
+        }
+      }
+    }
+  }
+
+  await batch.commit();
+  return { theaters: pickedTheaters.length, showtimes: count };
+}
+

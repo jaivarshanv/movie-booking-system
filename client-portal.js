@@ -1,4 +1,4 @@
-import { getMovies, getTheaters, getScreens, createMovie, updateMovie, createTheater, createScreen, createShowtime, getShowtimesForScreen, getAllShowtimes, deleteShowtime } from './db.js';
+import { getMovies, getTheaters, getScreens, createMovie, updateMovie, createTheater, createScreen, createShowtime, getShowtimesForScreen, getAllShowtimes, deleteShowtime, autoScheduleShowtimes } from './db.js';
 
 export async function renderClientPortal(container, onBack, user) {
   container.innerHTML = `
@@ -82,7 +82,11 @@ export async function renderClientPortal(container, onBack, user) {
             <textarea id="movie-synopsis" rows="3" style="width: 100%; padding: 12px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); color: white; border-radius: 6px;"></textarea>
           </div>
         </div>
-        <button id="save-movie-btn" class="btn-primary" style="width: 100%;">Save Movie</button>
+        <div style="display: flex; gap: 10px;">
+          <button id="save-movie-btn" class="btn-primary" style="flex: 1;">Save Movie</button>
+          <button id="auto-schedule-btn" class="btn-ghost" style="flex: 1; display: none;">Auto-Schedule Showtimes</button>
+        </div>
+        <div id="auto-schedule-status" style="display:none; margin-top: 10px; font-size: 12px; color: var(--clr-text-dim); text-align: center;"></div>
       </div>
 
       <!-- THEATER BUILDER TAB -->
@@ -686,6 +690,7 @@ export async function renderClientPortal(container, onBack, user) {
   });
 
   // Save Movie
+  let _lastSavedMovieId = null;
   document.getElementById('save-movie-btn').addEventListener('click', async (e) => {
     const movieId = document.getElementById('edit-movie-select').value;
     const title = document.getElementById('movie-title').value;
@@ -723,10 +728,17 @@ export async function renderClientPortal(container, onBack, user) {
 
       if (movieId) {
         await updateMovie(movieId, payload);
+        _lastSavedMovieId = movieId;
         alert("Movie updated successfully!");
       } else {
-        await createMovie(payload);
-        alert("Movie created successfully!");
+        const newId = await createMovie(payload);
+        _lastSavedMovieId = newId;
+        // Show auto-schedule button
+        const autoBtn = document.getElementById('auto-schedule-btn');
+        const autoStatus = document.getElementById('auto-schedule-status');
+        autoBtn.style.display = 'block';
+        autoStatus.style.display = 'block';
+        autoStatus.textContent = 'Movie saved! Click "Auto-Schedule Showtimes" to assign it to random theaters.';
         // Clear form
         editMovieSelect.value = '';
         editMovieSelect.dispatchEvent(new Event('change'));
@@ -741,6 +753,30 @@ export async function renderClientPortal(container, onBack, user) {
       hideLoader();
     }
   });
+
+  // Auto-Schedule Showtimes
+  document.getElementById('auto-schedule-btn').addEventListener('click', async (e) => {
+    if (!_lastSavedMovieId) return alert('Save a movie first.');
+    e.target.disabled = true;
+    e.target.textContent = 'Scheduling...';
+    const statusEl = document.getElementById('auto-schedule-status');
+    statusEl.textContent = 'Picking theaters and generating showtimes...';
+    showLoader();
+    try {
+      const result = await autoScheduleShowtimes(_lastSavedMovieId, user.uid);
+      statusEl.textContent = `Done! Scheduled across ${result.theaters} theater(s) — ${result.showtimes} showtime slots created for the next 7 days.`;
+      e.target.style.display = 'none';
+      _lastSavedMovieId = null;
+    } catch (err) {
+      statusEl.textContent = `Error: ${err.message}`;
+      e.target.disabled = false;
+      e.target.textContent = 'Auto-Schedule Showtimes';
+    } finally {
+      hideLoader();
+    }
+  });
+
+
 
   // Save Theater
   document.getElementById('save-theater-btn').addEventListener('click', async (e) => {
