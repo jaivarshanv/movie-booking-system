@@ -324,6 +324,9 @@ export async function renderClientPortal(container, onBack, user) {
             <span class="accordion-icon" style="transition: transform 0.2s; font-size: 12px; color: var(--clr-text-dim);">▼</span>
           </button>
           <div class="accordion-content" style="display: none; padding: 0 16px 16px 16px; flex-direction: column; gap: 16px;">
+            <div style="display: flex; justify-content: flex-end; margin-bottom: -8px;">
+              <button class="btn-ghost select-all-btn" style="padding: 4px 12px; font-size: 12px;">Select All</button>
+            </div>
             ${Object.entries(movieData.theaters).map(([theaterName, screens]) => `
               <div>
                 <h4 style="font-size: 14px; color: var(--clr-text); border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom: 4px; margin-bottom: 8px;">${theaterName}</h4>
@@ -405,6 +408,33 @@ export async function renderClientPortal(container, onBack, user) {
         chip.querySelector('.st-checkbox').addEventListener('change', (e) => {
           chip.style.background = e.target.checked ? 'rgba(255,49,49,0.15)' : 'rgba(255,255,255,0.05)';
           chip.style.borderColor = e.target.checked ? 'rgba(255,49,49,0.5)' : 'rgba(255,255,255,0.15)';
+          updateBulkBar();
+        });
+      });
+
+      // Bind select all buttons
+      document.querySelectorAll('.select-all-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+          e.stopPropagation(); // prevent accordion toggle if it bubbles
+          const content = e.currentTarget.closest('.accordion-content');
+          const chips = content.querySelectorAll('.st-chip');
+          let allSelected = true;
+          
+          // First pass: check if all are already selected
+          chips.forEach(chip => {
+            const cb = chip.querySelector('.st-checkbox');
+            if (!cb.checked) allSelected = false;
+          });
+
+          // Second pass: toggle
+          chips.forEach(chip => {
+            const cb = chip.querySelector('.st-checkbox');
+            cb.checked = !allSelected; // if all are selected, deselect all. Otherwise, select all.
+            chip.style.background = cb.checked ? 'rgba(255,49,49,0.15)' : 'rgba(255,255,255,0.05)';
+            chip.style.borderColor = cb.checked ? 'rgba(255,49,49,0.5)' : 'rgba(255,255,255,0.15)';
+          });
+          
+          btn.textContent = allSelected ? 'Select All' : 'Deselect All';
           updateBulkBar();
         });
       });
